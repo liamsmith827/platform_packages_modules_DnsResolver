@@ -135,8 +135,8 @@ int PrivateDnsConfiguration::set(int32_t netId, uint32_t mark,
         mPrivateDnsModes[netId] = PrivateDnsMode::OFF;
         clearDot(netId);
         clearDoh(netId);
+        mCv.notify_all();
         return 0;
-        // TODO: signal validation threads to stop.
     }
 
     if (int n = setDot(netId, mark, encryptedServers, name, caCert); n != 0) {
@@ -149,6 +149,9 @@ int PrivateDnsConfiguration::set(int32_t netId, uint32_t mark,
 int PrivateDnsConfiguration::setDot(int32_t netId, uint32_t mark,
                                     const std::vector<std::string>& servers,
                                     const std::string& name, const std::string& caCert) {
+    if (true) {
+        return 0;
+    }
     // Parse the list of servers that has been passed in
     std::map<ServerIdentity, DnsTlsServer> tmp;
     for (const auto& s : servers) {
@@ -299,8 +302,7 @@ void PrivateDnsConfiguration::clear(unsigned netId) {
 }
 
 base::Result<void> PrivateDnsConfiguration::requestDotValidation(unsigned netId,
-                                                                 const ServerIdentity& identity,
-                                                                 uint32_t mark) {
+                                                                 const ServerIdentity& identity) {
     std::lock_guard guard(mPrivateDnsLock);
 
     // Running revalidation requires to mark the server as in_process, which means the server
@@ -325,11 +327,6 @@ base::Result<void> PrivateDnsConfiguration::requestDotValidation(unsigned netId,
     if (target->validationState() != Validation::success) {
         return Errorf("Server validation state mismatched");
     }
-
-    // Don't run the validation if |mark| (from android_net_context.dns_mark) is different.
-    // This is to protect validation from running on unexpected marks.
-    // Validation should be associated with a mark gotten by system permission.
-    if (target->validationMark() != mark) return Errorf("Socket mark mismatched");
 
     updateServerState(identity, Validation::in_process, netId);
     startDotValidation(identity, netId, true);
@@ -368,7 +365,7 @@ void PrivateDnsConfiguration::startDotValidation(const ServerIdentity& identity,
             // It can take milliseconds to minutes, up to the SYN retry limit.
             LOG(WARNING) << "Validating DnsTlsServer " << server.toString() << " with mark 0x"
                          << std::hex << server.validationMark();
-            const bool success = DnsTlsTransport::validate(server, server.validationMark());
+            const bool success = DnsTlsTransport::validate(server);
             LOG(WARNING) << "validateDnsTlsServer returned " << success << " for "
                          << server.toString();
 
@@ -384,7 +381,9 @@ void PrivateDnsConfiguration::startDotValidation(const ServerIdentity& identity,
             // false.
             if (mCv.wait_for(cvGuard, backoff.getNextTimeout(),
                              [this, netId]() REQUIRES(mPrivateDnsLock) {
-                                 return mPrivateDnsModes.find(netId) == mPrivateDnsModes.end();
+                                 const auto mode = mPrivateDnsModes.find(netId);
+                                 if (mode == mPrivateDnsModes.end()) return true;
+                                 return mode->second == PrivateDnsMode::OFF;
                              })) {
                 break;
             }
@@ -616,11 +615,18 @@ int PrivateDnsConfiguration::setDoh(int32_t netId, uint32_t mark,
     initDohLocked();
 
     auto it = mDohTracker.find(netId);
-    // Skip if the same server already exists and its status == success.
-    if (it != mDohTracker.end() && it->second == doh.value() &&
-        it->second.status == Validation::success) {
-        return 0;
+    if (it != mDohTracker.end() && it->second == doh.value()) {
+        // Skip if the same server already exists and its status == success.
+        if (it->second.status == Validation::success) {
+            return 0;
+        }
+    } else {
+        // Per probe() in dispatcher/driver.rs, it is incorrect API usage to probe more than one
+        // server for each netId. So we must first delete the network and start again if the server
+        // changes.
+        clearDoh(netId);
     }
+
     const auto& [dohIt, _] = mDohTracker.insert_or_assign(netId, doh.value());
     const auto& dohId = dohIt->second;
 

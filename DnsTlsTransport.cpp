@@ -320,12 +320,13 @@ DnsTlsTransport::~DnsTlsTransport() {
 // static
 // TODO: Use this function to preheat the session cache.
 // That may require moving it to DnsTlsDispatcher.
-bool DnsTlsTransport::validate(const DnsTlsServer& server, uint32_t mark) {
+bool DnsTlsTransport::validate(const DnsTlsServer& server) {
+    uint32_t mark = server.validationMark();
     LOG(DEBUG) << "Beginning validation with mark " << std::hex << mark;
 
     const std::vector<uint8_t> query = makeDnsQuery();
     DnsTlsSocketFactory factory;
-    DnsTlsTransport transport(server, mark, &factory);
+    DnsTlsTransport transport(server, &factory);
 
     // Send the initial query to warm up the connection.
     auto r = transport.query(netdutils::makeSlice(query)).get();

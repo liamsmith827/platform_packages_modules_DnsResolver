@@ -131,10 +131,10 @@ class PrivateDnsConfiguration {
     ssize_t dohQuery(unsigned netId, const netdutils::Slice query, const netdutils::Slice answer,
                      uint64_t timeoutMs) EXCLUDES(mPrivateDnsLock);
 
-    // Request the server to be revalidated on a connection tagged with |mark|.
+    // Request the server to be revalidated.
     // Returns a Result to indicate if the request is accepted.
-    base::Result<void> requestDotValidation(unsigned netId, const ServerIdentity& identity,
-                                            uint32_t mark) EXCLUDES(mPrivateDnsLock);
+    base::Result<void> requestDotValidation(unsigned netId, const ServerIdentity& identity)
+            EXCLUDES(mPrivateDnsLock);
 
     void setObserver(PrivateDnsValidationObserver* observer);
 
@@ -217,7 +217,7 @@ class PrivateDnsConfiguration {
     // TODO: make it const by dependency injection.
     netdutils::BackoffSequence<>::Builder mBackoffBuilder =
             netdutils::BackoffSequence<>::Builder()
-                    .withInitialRetransmissionTime(std::chrono::seconds(60))
+                    .withInitialRetransmissionTime(std::chrono::seconds(10))
                     .withMaximumRetransmissionTime(std::chrono::seconds(3600));
 
     struct DohIdentity {

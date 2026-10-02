@@ -97,6 +97,7 @@ struct ResState {
     ResState(const android_net_context* netcontext, std::optional<int> app_socket,
              android::net::NetworkDnsEventReported* dnsEvent)
         : netid(netcontext->dns_netid),
+          private_dns_netid(netcontext->private_dns_netid),
           uid(netcontext->uid),
           pid(netcontext->pid),
           app_socket(app_socket),
@@ -109,6 +110,7 @@ struct ResState {
         //       constructor do its work for below copyable members.
         ResState copy;
         copy.netid = netid;
+        copy.private_dns_netid = private_dns_netid;
         copy.uid = uid;
         copy.pid = pid;
         copy.app_socket = app_socket;
@@ -138,7 +140,9 @@ struct ResState {
     int nameserverCount() { return nsaddrs.size(); }
 
     // clang-format off
+    // TODO: rename to dns_netid?
     unsigned netid;                             // NetId: cache key and socket mark
+    unsigned private_dns_netid;
     uid_t uid;                                  // uid of the app that sent the DNS lookup
     pid_t pid;                                  // pid of the app that sent the DNS lookup
     std::optional<int> app_socket;              // Communication socket with the querier process
@@ -146,6 +150,7 @@ struct ResState {
     std::vector<android::netdutils::IPSockAddr> nsaddrs;
     std::array<timespec, MAXNS> udpsocks_ts;    // The creation time of the UDP sockets
     android::base::unique_fd udpsocks[MAXNS];   // UDP sockets to nameservers
+    // TODO: rename to dns_mark?
     unsigned mark;                              // Socket mark to be used by all DNS query sockets
     android::base::unique_fd tcp_nssock;        // TCP socket (but why not one per nameserver?)
     timespec tcp_nssock_ts = {};                // The creation time of the TCP socket
@@ -244,10 +249,12 @@ android::net::IpVersion ipFamilyToIPVersion(int ipFamily);
 
 inline void resolv_tag_socket(int sock, uid_t uid, pid_t pid) {
     if (int err = android::net::gResNetdCallbacks.tagSocket(sock, TAG_SYSTEM_DNS, uid, pid)) {
+        // TODO: Abort?
         LOG(WARNING) << "Failed to tag socket: " << strerror(-err);
     }
 
     if (fchown(sock, uid, -1) == -1) {
+        // TODO: Abort?
         PLOG(WARNING) << "Failed to chown socket";
     }
 }

@@ -83,11 +83,17 @@ struct android_net_context {
     unsigned app_mark;
     unsigned dns_netid;
     unsigned dns_mark;
+    // Both dns_netid and private_dns_netid are populated with consideration of strict leak blocking
+    // so it's not catastrophic if future upstream code uses dns_netid where private_dns_netid
+    // should be used.
+    unsigned private_dns_netid;
+    bool lockdownVpnBlockingDns;
     uid_t uid = NET_CONTEXT_INVALID_UID;
     unsigned flags;
     // Variable to store the pid of the application sending DNS query.
     pid_t pid = NET_CONTEXT_INVALID_PID;
 
+    // TODO: add new fields.
     std::string toString() const {
         return fmt::format("{} {} {} {} {} {}", app_netid, app_mark, dns_netid, dns_mark, uid,
                            flags);
@@ -103,6 +109,7 @@ struct android_net_context {
 typedef bool (*check_calling_permission_callback)(const char* permission);
 typedef void (*get_network_context_callback)(unsigned netid, uid_t uid,
                                              android_net_context* netcontext);
+typedef int32_t (*get_mark_for_private_dns_resolver_callback)(unsigned netid);
 typedef void (*log_callback)(const char* msg);
 typedef int (*tagSocketCallback)(int sockFd, uint32_t tag, uid_t uid, pid_t pid);
 
@@ -141,6 +148,7 @@ struct ResolverNetdCallbacks {
     // the following are guaranteed non-null on Q+
     check_calling_permission_callback check_calling_permission;
     get_network_context_callback get_network_context;
+    get_mark_for_private_dns_resolver_callback get_mark_for_private_dns_resolver;
     log_callback log;
     // the following are guaranteed non-null on R+
     tagSocketCallback tagSocket;

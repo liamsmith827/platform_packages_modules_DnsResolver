@@ -889,8 +889,7 @@ void DnsProxyListener::GetAddrInfoHandler::run() {
     NetworkDnsEventReported event;
     initDnsEvent(&event, mNetContext);
     const bool isUidBlocked = isUidNetworkingBlocked(mNetContext.uid, mNetContext.dns_netid);
-    bool isLockdownVpnBlockingDns = gResNetdCallbacks.check_lockdown_vpn_blocking_dns(&mNetContext);
-    if (isUidBlocked || isLockdownVpnBlockingDns) {
+    if (isUidBlocked || mNetContext.lockdownVpnBlockingDns) {
         LOG(INFO) << "GetAddrInfoHandler::run: network or DNS server access blocked";
         rv = EAI_FAIL;
     } else if (startQueryLimiter(uid)) {
@@ -899,6 +898,7 @@ void DnsProxyListener::GetAddrInfoHandler::run() {
         if (gResNetdCallbacks.evaluate_domain_name(mNetContext, host)) {
             rv = resolv_getaddrinfo(host, service, mHints.get(), &mNetContext, mClient->getSocket(),
                                     &result, &event);
+            // TODO: this and app mark
             doDns64Synthesis(&rv, &result, &event);
         } else {
             rv = EAI_SYSTEM;
@@ -1105,8 +1105,7 @@ void DnsProxyListener::ResNSendHandler::run() {
     NetworkDnsEventReported event;
     initDnsEvent(&event, mNetContext);
     const bool isUidBlocked = isUidNetworkingBlocked(mNetContext.uid, mNetContext.dns_netid);
-    bool isLockdownVpnBlockingDns = gResNetdCallbacks.check_lockdown_vpn_blocking_dns(&mNetContext);
-    if (isUidBlocked || isLockdownVpnBlockingDns) {
+    if (isUidBlocked || mNetContext.lockdownVpnBlockingDns) {
         LOG(INFO) << "ResNSendHandler::run: network or DNS server access blocked";
         ansLen = -ECONNREFUSED;
     } else if (startQueryLimiter(uid)) {
@@ -1330,8 +1329,7 @@ void DnsProxyListener::GetHostByNameHandler::run() {
     NetworkDnsEventReported event;
     initDnsEvent(&event, mNetContext);
     const bool isUidBlocked = isUidNetworkingBlocked(mNetContext.uid, mNetContext.dns_netid);
-    bool isLockdownVpnBlockingDns = gResNetdCallbacks.check_lockdown_vpn_blocking_dns(&mNetContext);
-    if (isUidBlocked || isLockdownVpnBlockingDns) {
+    if (isUidBlocked || mNetContext.lockdownVpnBlockingDns) {
         LOG(INFO) << "GetHostByNameHandler::run: network or DNS server access blocked";
         rv = EAI_FAIL;
     } else if (startQueryLimiter(uid)) {
@@ -1495,8 +1493,7 @@ void DnsProxyListener::GetHostByAddrHandler::run() {
     initDnsEvent(&event, mNetContext);
 
     const bool isUidBlocked = isUidNetworkingBlocked(mNetContext.uid, mNetContext.dns_netid);
-    bool isLockdownVpnBlockingDns = gResNetdCallbacks.check_lockdown_vpn_blocking_dns(&mNetContext);
-    if (isUidBlocked || isLockdownVpnBlockingDns) {
+    if (isUidBlocked || mNetContext.lockdownVpnBlockingDns) {
         LOG(INFO) << "GetHostByAddrHandler::run: network or DNS server access blocked";
         rv = EAI_FAIL;
     } else if (startQueryLimiter(uid)) {

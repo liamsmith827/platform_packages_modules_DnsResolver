@@ -49,7 +49,7 @@ DnsTlsDispatcher& DnsTlsDispatcher::getInstance() {
 }
 
 std::list<DnsTlsServer> DnsTlsDispatcher::getOrderedAndUsableServerList(
-        const std::list<DnsTlsServer>& tlsServers, unsigned netId, unsigned mark) {
+        const std::list<DnsTlsServer>& tlsServers, unsigned netId) {
     // Our preferred DnsTlsServer order is:
     //     1) reuse existing IPv6 connections
     //     2) reuse existing IPv4 connections
@@ -66,7 +66,7 @@ std::list<DnsTlsServer> DnsTlsDispatcher::getOrderedAndUsableServerList(
         std::lock_guard guard(sLock);
 
         for (const auto& tlsServer : tlsServers) {
-            const Key key = std::make_pair(mark, tlsServer);
+            const Key key = std::make_pair(tlsServer.validationMark(), tlsServer);
             if (Transport* xport = getTransport(key); xport != nullptr) {
                 if (!xport->usable()) {
                     // Don't use this xport. It will be removed after timeout
@@ -109,7 +109,7 @@ DnsTlsTransport::Response DnsTlsDispatcher::query(const std::list<DnsTlsServer>&
                                                   const Slice ans, int* resplen,
                                                   bool dotQuickFallback) {
     const std::list<DnsTlsServer> servers(
-            getOrderedAndUsableServerList(tlsServers, statp->netid, statp->mark));
+            getOrderedAndUsableServerList(tlsServers, statp->private_dns_netid));
 
     if (servers.empty()) {
         LOG(WARNING) << "No usable DnsTlsServers";
@@ -127,8 +127,7 @@ DnsTlsTransport::Response DnsTlsDispatcher::query(const std::list<DnsTlsServer>&
 
         bool connectTriggered = false;
         Stopwatch queryStopwatch;
-        code = this->query(server, statp->netid, statp->mark, query, ans, resplen,
-                           &connectTriggered);
+        code = this->query(server, statp->private_dns_netid, query, ans, resplen, &connectTriggered);
 
         dnsQueryEvent->set_latency_micros(saturate_cast<int32_t>(queryStopwatch.timeTakenUs()));
         dnsQueryEvent->set_dns_server_index(serverCount++);
@@ -144,25 +143,25 @@ DnsTlsTransport::Response DnsTlsDispatcher::query(const std::list<DnsTlsServer>&
             case DnsTlsTransport::Response::success:
                 dnsQueryEvent->set_rcode(
                         static_cast<NsRcode>(reinterpret_cast<HEADER*>(ans.base())->rcode));
-                resolv_stats_add(statp->netid, IPSockAddr::toIPSockAddr(server.ss), dnsQueryEvent);
+                resolv_stats_add(statp->private_dns_netid, IPSockAddr::toIPSockAddr(server.ss), dnsQueryEvent);
                 return code;
             case DnsTlsTransport::Response::limit_error:
                 dnsQueryEvent->set_rcode(NS_R_INTERNAL_ERROR);
-                resolv_stats_add(statp->netid, IPSockAddr::toIPSockAddr(server.ss), dnsQueryEvent);
+                resolv_stats_add(statp->private_dns_netid, IPSockAddr::toIPSockAddr(server.ss), dnsQueryEvent);
                 return code;
             // These response codes might differ when trying other servers, so
             // keep iterating to see if we can get a different (better) result.
             case DnsTlsTransport::Response::network_error:
                 // Sync from res_tls_send in res_send.cpp
                 dnsQueryEvent->set_rcode(NS_R_TIMEOUT);
-                resolv_stats_add(statp->netid, IPSockAddr::toIPSockAddr(server.ss), dnsQueryEvent);
+                resolv_stats_add(statp->private_dns_netid, IPSockAddr::toIPSockAddr(server.ss), dnsQueryEvent);
                 if (dotQuickFallback) {
                     return code;
                 }
                 break;
             case DnsTlsTransport::Response::internal_error:
                 dnsQueryEvent->set_rcode(NS_R_INTERNAL_ERROR);
-                resolv_stats_add(statp->netid, IPSockAddr::toIPSockAddr(server.ss), dnsQueryEvent);
+                resolv_stats_add(statp->private_dns_netid, IPSockAddr::toIPSockAddr(server.ss), dnsQueryEvent);
                 break;
             // No "default" statement.
         }
@@ -172,17 +171,15 @@ DnsTlsTransport::Response DnsTlsDispatcher::query(const std::list<DnsTlsServer>&
 }
 
 DnsTlsTransport::Response DnsTlsDispatcher::query(const DnsTlsServer& server, unsigned netId,
-                                                  unsigned mark, const Slice query, const Slice ans,
+                                                  const Slice query, const Slice ans,
                                                   int* resplen, bool* connectTriggered) {
-    // TODO: This can cause the resolver to create multiple connections to the same DoT server
-    // merely due to different mark, such as the bit explicitlySelected unset.
-    // See if we can save them and just create one connection for one DoT server.
+    unsigned mark = server.validationMark();
     const Key key = std::make_pair(mark, server);
     Transport* xport;
     {
         std::lock_guard guard(sLock);
         if (xport = getTransport(key); xport == nullptr) {
-            xport = addTransport(server, mark, netId);
+            xport = addTransport(server, netId);
         }
         ++xport->useCount;
     }
@@ -230,7 +227,7 @@ DnsTlsTransport::Response DnsTlsDispatcher::query(const DnsTlsServer& server, un
             // it anymore. Eventually, after IDLE_TIMEOUT, the xport will be destroyed, and
             // a new xport will be created.
             const auto result = PrivateDnsConfiguration::getInstance().requestDotValidation(
-                    netId, PrivateDnsConfiguration::ServerIdentity{server}, mark);
+                    netId, PrivateDnsConfiguration::ServerIdentity{server});
             LOG(WARNING) << "Requested validation for " << server.toString() << " with mark 0x"
                          << std::hex << mark << ", "
                          << (result.ok() ? "succeeded" : "failed: " + result.error().message());
@@ -298,8 +295,8 @@ void DnsTlsDispatcher::cleanup(std::chrono::time_point<std::chrono::steady_clock
 }
 
 DnsTlsDispatcher::Transport* DnsTlsDispatcher::addTransport(const DnsTlsServer& server,
-                                                            unsigned mark, unsigned netId) {
-    const Key key = std::make_pair(mark, server);
+                                                            unsigned netId) {
+    const Key key = std::make_pair(server.validationMark(), server);
     Transport* ret = getTransport(key);
     if (ret != nullptr) return ret;
 
@@ -324,7 +321,7 @@ DnsTlsDispatcher::Transport* DnsTlsDispatcher::addTransport(const DnsTlsServer& 
         queryTimeout = 1000;
     }
 
-    ret = new Transport(server, mark, netId, mFactory.get(), triggerThr, unusableThr, queryTimeout);
+    ret = new Transport(server, netId, mFactory.get(), triggerThr, unusableThr, queryTimeout);
     LOG(INFO) << "Transport is initialized with { " << triggerThr << ", " << unusableThr << ", "
               << queryTimeout << "ms }"
               << " for server " << server.toString();

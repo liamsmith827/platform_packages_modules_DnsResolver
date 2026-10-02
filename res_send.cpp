@@ -505,6 +505,7 @@ int res_nsend(ResState* statp, span<const uint8_t> msg, span<uint8_t> ans, int* 
 
     int anslen = 0;
     Stopwatch cacheStopwatch;
+    // TODO: Check private_dns_netid cache too.
     ResolvCacheStatus cache_status = resolv_cache_lookup(statp->netid, msg, ans, &anslen, flags);
     const int32_t cacheLatencyUs = saturate_cast<int32_t>(cacheStopwatch.timeTakenUs());
     if (cache_status == RESOLV_CACHE_FOUND) {
@@ -521,18 +522,6 @@ int res_nsend(ResState* statp, span<const uint8_t> msg, span<uint8_t> ans, int* 
         resolv_populate_res_for_net(statp);
     }
 
-    if (statp->nameserverCount() == 0) {
-        // We have no nameservers configured and it's not a MDNS resolution, so there's no
-        // point trying. Tell the cache the query failed, or any retries and anyone else
-        // asking the same question will block for PENDING_REQUEST_TIMEOUT seconds instead
-        // of failing fast.
-        _resolv_cache_query_failed(statp->netid, msg, flags);
-        LOG(DEBUG) << __func__ << ": no nameserver";
-        // TODO: Remove errno once callers stop using it
-        errno = ESRCH;
-        return -ESRCH;
-    }
-
     // Private DNS
     if (!(statp->netcontext_flags & NET_CONTEXT_FLAG_USE_LOCAL_NAMESERVERS)) {
         bool fallback = false;
@@ -543,15 +532,27 @@ int res_nsend(ResState* statp, span<const uint8_t> msg, span<uint8_t> ans, int* 
             LOG(DEBUG) << __func__ << ": got answer from Private DNS";
             res_pquery(ans.first(resplen));
             if (cache_status == RESOLV_CACHE_NOTFOUND) {
-                resolv_cache_add(statp->netid, msg, ans.first(resplen));
+                resolv_cache_add(statp->private_dns_netid, msg, ans.first(resplen));
             }
             return resplen;
         }
         if (!fallback) {
-            _resolv_cache_query_failed(statp->netid, msg, flags);
+            _resolv_cache_query_failed(statp->private_dns_netid, msg, flags);
             LOG(DEBUG) << __func__ << ": private DNS failed";
             return -ETIMEDOUT;
         }
+    }
+
+    if (statp->nameserverCount() == 0) {
+        // We have no nameservers configured and it's not a MDNS resolution, so there's no
+        // point trying. Tell the cache the query failed, or any retries and anyone else
+        // asking the same question will block for PENDING_REQUEST_TIMEOUT seconds instead
+        // of failing fast.
+        _resolv_cache_query_failed(statp->netid, msg, flags);
+        LOG(DEBUG) << __func__ << ": no nameserver";
+        // TODO: Remove errno once callers stop using it
+        errno = ESRCH;
+        return -ESRCH;
     }
 
     // If parallel_lookup is enabled, it might be required to wait some time to avoid
@@ -1396,7 +1397,7 @@ static int sock_eq(struct sockaddr* a, struct sockaddr* b) {
 
 static int res_private_dns_send(ResState* statp, const Slice query, const Slice answer, int* rcode,
                                 bool* fallback) {
-    const unsigned netId = statp->netid;
+    const unsigned netId = statp->private_dns_netid;
 
     auto& privateDnsConfiguration = PrivateDnsConfiguration::getInstance();
     PrivateDnsStatus privateDnsStatus = privateDnsConfiguration.getStatus(netId);
@@ -1414,6 +1415,7 @@ static int res_private_dns_send(ResState* statp, const Slice query, const Slice 
                 result = res_doh_send(statp, query, answer, rcode);
                 if (result != DOH_RESULT_CAN_NOT_SEND) return result;
             }
+            // TODO: statp netid?
             return res_tls_send(privateDnsStatus.validatedServers(), statp, query, answer, rcode,
                                 privateDnsStatus.mode);
         }
@@ -1466,7 +1468,7 @@ static int res_private_dns_send(ResState* statp, const Slice query, const Slice 
 
 ssize_t res_doh_send(ResState* statp, const Slice query, const Slice answer, int* rcode) {
     auto& privateDnsConfiguration = PrivateDnsConfiguration::getInstance();
-    const unsigned netId = statp->netid;
+    const unsigned netId = statp->private_dns_netid;
     LOG(DEBUG) << __func__ << ": performing query over Https";
     Stopwatch queryStopwatch;
     int queryTimeout = Experiments::getInstance()->getFlag(

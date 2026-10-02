@@ -73,8 +73,6 @@ struct DnsTlsServer {
     void setValidationState(Validation val) { mValidation = val; }
 
     // The socket mark used for validation.
-    // Note that the mark of a connection to which the DnsResolver sends app's DNS requests can
-    // be different.
     // TODO: make it const.
     uint32_t mark = 0;
 

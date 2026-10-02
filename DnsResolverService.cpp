@@ -320,7 +320,14 @@ binder_status_t DnsResolverService::dump(int fd, const char** args, uint32_t num
         int32_t ifindex, const std::optional<DnsForwardingParamsParcel>& forwardingParams) {
     ENFORCE_NETWORK_STACK_PERMISSIONS();
 
+    // Disable this new DNS forwarding functionality until it is clear how it works has been audited
+    // for leaks.
+    if (true) {
+        return statusFromErrcode(-EPERM);
+    }
+
     int res;
+
     if (forwardingParams.has_value()) {
         const auto& params = forwardingParams.value();
         res = gDnsResolv->resolverCtrl.configureDnsForwarding(ifindex, params.netId, params.uid);

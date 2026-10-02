@@ -55,11 +55,11 @@ class DnsTlsDispatcher : public PrivateDnsValidationObserver {
                                     const netdutils::Slice ans, int* _Nonnull resplen,
                                     bool dotQuickFallback);
 
-    // Given a |query|, sends it to the server on the network indicated by |mark|,
-    // and writes the response into |ans|, and indicates the number of bytes written in |resplen|.
+    // Given a |query|, sends it to the |server| and writes the response into |ans|, and indicates
+    // the number of bytes written in |resplen|.
     // If the whole procedure above triggers (or experiences) any new connection, |connectTriggered|
     // is set. Returns a success or error code.
-    DnsTlsTransport::Response query(const DnsTlsServer& server, unsigned netId, unsigned mark,
+    DnsTlsTransport::Response query(const DnsTlsServer& server, unsigned netId,
                                     const netdutils::Slice query, const netdutils::Slice ans,
                                     int* _Nonnull resplen, bool* _Nonnull connectTriggered);
 
@@ -82,10 +82,10 @@ class DnsTlsDispatcher : public PrivateDnsValidationObserver {
     // Transport is a thin wrapper around DnsTlsTransport, adding reference counting and
     // usage monitoring so we can expire idle sessions from the cache.
     struct Transport {
-        Transport(const DnsTlsServer& server, unsigned mark, unsigned netId,
+        Transport(const DnsTlsServer& server, unsigned netId,
                   IDnsTlsSocketFactory* _Nonnull factory, int triggerThr, int unusableThr,
                   int timeout)
-            : transport(server, mark, factory),
+            : transport(server, factory),
               mNetId(netId),
               triggerThreshold(triggerThr),
               unusableThreshold(unusableThr),
@@ -145,7 +145,7 @@ class DnsTlsDispatcher : public PrivateDnsValidationObserver {
         const std::chrono::milliseconds mTimeout;
     };
 
-    Transport* _Nullable addTransport(const DnsTlsServer& server, unsigned mark, unsigned netId)
+    Transport* _Nullable addTransport(const DnsTlsServer& server, unsigned netId)
             REQUIRES(sLock);
     Transport* _Nullable getTransport(const Key& key) REQUIRES(sLock);
 
@@ -169,7 +169,7 @@ class DnsTlsDispatcher : public PrivateDnsValidationObserver {
 
     // Return a sorted list of usable DnsTlsServers in preference order.
     std::list<DnsTlsServer> getOrderedAndUsableServerList(const std::list<DnsTlsServer>& tlsServers,
-                                                          unsigned netId, unsigned mark);
+                                                          unsigned netId);
 
     // Trivial factory for DnsTlsSockets.  Dependency injection is only used for testing.
     std::unique_ptr<IDnsTlsSocketFactory> mFactory;
