@@ -326,6 +326,12 @@ binder_status_t DnsResolverService::dump(int fd, const char** args, uint32_t num
         const std::optional<aidl::android::net::resolv::aidl::DnsForwardingParamsParcel>&
                 forwardingParams) {
     ENFORCE_NETWORK_STACK_PERMISSIONS();
+    // Disable this new DNS forwarding functionality until it is clear how it works has been audited
+    // for leaks.
+    if (true) {
+        return statusFromErrcode(-EPERM);
+    }
+
     if (forwardingParams.has_value()) {
         mDnsProxy.configureDnsProxy(forwardingParams.value().netId, forwardingParams.value().uid,
                                     downstreamIfIndex, DNS_PORT);

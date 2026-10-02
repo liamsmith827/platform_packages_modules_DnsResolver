@@ -200,9 +200,11 @@ int ResolverController::setResolverConfiguration(const ResolverParamsParcel& res
         return -ENOENT;
     }
 
-    // Expect to get the mark with system permission.
-    android_net_context netcontext;
-    gResNetdCallbacks.get_network_context(resolverParams.netId, 0 /* uid */, &netcontext);
+    int32_t private_resolver_mark = gResNetdCallbacks.get_mark_for_private_dns_resolver(
+            resolverParams.netId);
+    if (private_resolver_mark < 0) {
+        return private_resolver_mark;
+    }
 
     // Allow at most MAXNS private DNS servers in a network to prevent too many broken servers.
     std::vector<std::string> tlsServers = resolverParams.tlsServers;
@@ -210,19 +212,16 @@ int ResolverController::setResolverConfiguration(const ResolverParamsParcel& res
         tlsServers.resize(MAXNS);
     }
 
-    // Use app_mark for DoT connection. Using dns_mark might result in reaching the DoT servers
-    // through a different network. For example, on a VPN with no DNS servers (Do53), if the VPN
-    // applies to UID 0, dns_mark is assigned for default network rathan the VPN. (note that it's
-    // possible that a VPN doesn't have any DNS servers but DoT servers in DNS strict mode)
     auto& privateDnsConfiguration = PrivateDnsConfiguration::getInstance();
     int err = privateDnsConfiguration.set(
-            resolverParams.netId, netcontext.app_mark, resolverParams.servers, tlsServers,
+            resolverParams.netId, private_resolver_mark, resolverParams.servers, tlsServers,
             resolverParams.tlsName, resolverParams.caCertificate, resolverParams.dohParams);
 
     if (err != 0) {
         return err;
     }
 
+    // TODO: ??
     if (is_mdns_supported_transport_types(resolverParams.transportTypes)) {
         if (err = resolv_stats_set_addrs(resolverParams.netId, PROTO_MDNS,
                                          {"ff02::fb", "224.0.0.251"}, 5353);

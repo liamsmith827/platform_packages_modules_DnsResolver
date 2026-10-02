@@ -79,10 +79,13 @@ void Dns64Configuration::startPrefixDiscovery(unsigned netId) {
             if (!thiz->shouldContinueDiscovery(evalCfg)) break;
 
             android_net_context netcontext{};
+            // TODO: uid 0? leak?
+            // TODO: Return?
             thiz->mGetNetworkContextCallback(evalCfg.netId, 0, &netcontext);
 
             // Prefix discovery must bypass private DNS because in strict mode
             // the server generally won't know the NAT64 prefix.
+            // TODO: Leak?
             netcontext.flags |= NET_CONTEXT_FLAG_USE_LOCAL_NAMESERVERS;
             if (doRfc7050PrefixDiscovery(netcontext, &evalCfg)) {
                 thiz->recordDns64Config(evalCfg);

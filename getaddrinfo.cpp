@@ -269,6 +269,7 @@ int getaddrinfo_numeric(const char* hostname, const char* servname, addrinfo hin
             .app_mark = MARK_UNSET,
             .dns_netid = NETID_UNSET,
             .dns_mark = MARK_UNSET,
+            .private_dns_netid = NETID_UNSET,
             .uid = NET_CONTEXT_INVALID_UID,
             .pid = NET_CONTEXT_INVALID_PID,
     };

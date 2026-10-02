@@ -187,7 +187,8 @@ TEST_F(PrivateDnsConfigurationTest, ValidationFail_Opportunistic) {
 }
 
 TEST_F(PrivateDnsConfigurationTest, Revalidation_Opportunistic) {
-    const DnsTlsServer server(netdutils::IPSockAddr::toIPSockAddr(kServer1, 853));
+    DnsTlsServer server(netdutils::IPSockAddr::toIPSockAddr(kServer1, 853));
+    server.mark = kMark;
 
     // Step 1: Set up and wait for validation complete.
     testing::InSequence seq;
@@ -213,7 +214,7 @@ TEST_F(PrivateDnsConfigurationTest, Revalidation_Opportunistic) {
         backend.startServer();
     });
     backend.stopServer();
-    EXPECT_TRUE(mPdc.requestDotValidation(kNetId, ServerIdentity(server), kMark).ok());
+    EXPECT_TRUE(mPdc.requestDotValidation(kNetId, ServerIdentity(server)).ok());
 
     t.join();
     expectPrivateDnsStatus(PrivateDnsMode::OPPORTUNISTIC);
@@ -329,7 +330,8 @@ TEST_F(PrivateDnsConfigurationTest, ServerIdentity_Comparison) {
 }
 
 TEST_F(PrivateDnsConfigurationTest, RequestValidation) {
-    const DnsTlsServer server(netdutils::IPSockAddr::toIPSockAddr(kServer1, 853));
+    DnsTlsServer server(netdutils::IPSockAddr::toIPSockAddr(kServer1, 853));
+    server.mark = kMark;
     const ServerIdentity identity(server);
 
     testing::InSequence seq;
@@ -358,18 +360,17 @@ TEST_F(PrivateDnsConfigurationTest, RequestValidation) {
             EXPECT_CALL(mObserver,
                         onValidationStateUpdate(kServer1, Validation::in_process, kNetId));
             EXPECT_CALL(mObserver, onValidationStateUpdate(kServer1, Validation::success, kNetId));
-            EXPECT_TRUE(mPdc.requestDotValidation(kNetId, identity, kMark).ok());
+            EXPECT_TRUE(mPdc.requestDotValidation(kNetId, identity).ok());
         } else if (config == "IN_PROGRESS") {
             EXPECT_CALL(mObserver, onValidationStateUpdate(kServer1, Validation::success, kNetId));
-            EXPECT_FALSE(mPdc.requestDotValidation(kNetId, identity, kMark).ok());
+            EXPECT_FALSE(mPdc.requestDotValidation(kNetId, identity).ok());
         } else if (config == "FAIL") {
-            EXPECT_FALSE(mPdc.requestDotValidation(kNetId, identity, kMark).ok());
+            EXPECT_FALSE(mPdc.requestDotValidation(kNetId, identity).ok());
         }
 
         // Resending the same request or requesting nonexistent servers are denied.
-        EXPECT_FALSE(mPdc.requestDotValidation(kNetId, identity, kMark).ok());
-        EXPECT_FALSE(mPdc.requestDotValidation(kNetId, identity, kMark + 1).ok());
-        EXPECT_FALSE(mPdc.requestDotValidation(kNetId + 1, identity, kMark).ok());
+        EXPECT_FALSE(mPdc.requestDotValidation(kNetId, identity).ok());
+        EXPECT_FALSE(mPdc.requestDotValidation(kNetId + 1, identity).ok());
 
         // Reset the test state.
         backend.setDeferredResp(false);
